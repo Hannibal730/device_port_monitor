@@ -377,12 +377,20 @@ class SettingsWindow(Gtk.Window):
         device_frame.add(self.device_label)
         content.pack_start(device_frame, True, True, 0)
 
-        button_box = Gtk.ButtonBox(orientation=Gtk.Orientation.HORIZONTAL)
-        button_box.set_layout(Gtk.ButtonBoxStyle.END)
+        footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        copyright_label = Gtk.Label()
+        copyright_label.set_markup(
+            "<small>Copyright (c) 2026 cds730@konkuk.ac.kr</small>"
+        )
+        copyright_label.set_xalign(0)
+        copyright_label.set_valign(Gtk.Align.CENTER)
+        copyright_label.get_style_context().add_class("dim-label")
+        footer.pack_start(copyright_label, True, True, 0)
+
         close_button = Gtk.Button(label="Close")
         close_button.connect("clicked", lambda _button: self.close())
-        button_box.add(close_button)
-        content.pack_end(button_box, False, False, 0)
+        footer.pack_end(close_button, False, False, 0)
+        content.pack_end(footer, False, False, 0)
 
         if not APPIMAGE_PATH:
             run_systemctl("daemon-reload")
