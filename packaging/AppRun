@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+APPDIR=${APPDIR:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}
+export APPDIR
+
+if [ "$#" -eq 0 ]; then
+    set -- --settings
+fi
+
+exec /usr/bin/python3 "$APPDIR/usr/bin/device-port-monitor" "$@"

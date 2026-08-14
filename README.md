@@ -27,12 +27,24 @@ Ubuntu GNOME 상단바에서 `/dev/ttyACM*`, `/dev/ttyUSB*`, `/dev/video*` 장�
 ./build-deb.sh
 ```
 
-결과 파일은 `dist/device-port-monitor_1.0.0_all.deb`이다.
+결과 파일은 `dist/device-port-monitor_1.1.0_all.deb`이다.
+
+AppImage 빌드:
+
+```bash
+./build-appimage.sh
+```
+
+결과 파일은 현재 CPU에 따라
+`dist/Device_Port_Monitor-1.1.0-x86_64.AppImage` 또는
+`dist/Device_Port_Monitor-1.1.0-aarch64.AppImage`이다. AppImage를 직접 실행하면
+설정창이 열리고, 자동 실행을 켜면 현재 AppImage의 절대 경로가 사용자 자동 시작
+설정에 저장된다. 따라서 자동 실행을 켠 뒤에는 AppImage 파일을 이동하지 않아야 한다.
 
 ## 설치와 제거
 
 ```bash
-sudo apt install ./dist/device-port-monitor_1.0.0_all.deb
+sudo apt install ./dist/device-port-monitor_1.1.0_all.deb
 sudo apt remove device-port-monitor
 ```
 

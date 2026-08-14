@@ -4,6 +4,7 @@
 import fcntl
 import glob
 import os
+import shutil
 import subprocess
 import sys
 
@@ -18,6 +19,8 @@ from gi.repository import AppIndicator3, Gio, GLib, Gtk, Notify
 
 APP_NAME = "Device Port Monitor"
 SERVICE_NAME = "device-port-monitor.service"
+APPIMAGE_PATH = os.environ.get("APPIMAGE", "")
+APPDIR_PATH = os.environ.get("APPDIR", "")
 DEVICE_PATTERNS = ("/dev/ttyACM*", "/dev/ttyUSB*", "/dev/video*")
 SERIAL_PREFIXES = ("/dev/ttyACM", "/dev/ttyUSB")
 WATCHED_NAMES = ("ttyACM", "ttyUSB", "video")
@@ -52,12 +55,207 @@ def run_systemctl(*arguments):
     )
 
 
-def service_is_enabled():
+def autostart_path():
+    config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    filename = (
+        "device-port-monitor-appimage.desktop"
+        if APPIMAGE_PATH
+        else "device-port-monitor.desktop"
+    )
+    return os.path.join(config_home, "autostart", filename)
+
+
+def user_data_home():
+    return os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
+
+
+def persistent_icon_path():
+    return os.path.join(
+        user_data_home(),
+        "icons",
+        "hicolor",
+        "256x256",
+        "apps",
+        "device-port-monitor.png",
+    )
+
+
+def appimage_launcher_path():
+    return os.path.join(user_data_home(), "applications", "device-port-monitor.desktop")
+
+
+def quote_desktop_exec(value):
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
+    escaped = escaped.replace("`", "\\`")
+    return f'"{escaped}"'
+
+
+def appimage_autostart_is_enabled():
+    path = autostart_path()
+    try:
+        with open(path, "r", encoding="utf-8") as desktop_file:
+            contents = desktop_file.read()
+    except FileNotFoundError:
+        return False
+    return (
+        "X-Device-Port-Monitor-AppImage=true" in contents
+        and f"X-AppImage-Path={APPIMAGE_PATH}" in contents
+    )
+
+
+def install_appimage_integration():
+    """Install a persistent icon and app-menu launcher for this AppImage."""
+    if not APPIMAGE_PATH:
+        return
+
+    source_icon = os.path.join(APPDIR_PATH, "device-port-monitor.png")
+    icon_path = persistent_icon_path()
+    launcher_path = appimage_launcher_path()
+    os.makedirs(os.path.dirname(icon_path), exist_ok=True)
+    os.makedirs(os.path.dirname(launcher_path), exist_ok=True)
+    shutil.copyfile(source_icon, icon_path)
+    os.chmod(icon_path, 0o644)
+
+    contents = "\n".join(
+        [
+            "[Desktop Entry]",
+            "Type=Application",
+            "Version=1.0",
+            "Name=Device Port Monitor",
+            "Name[ko]=장치 포트 모니터",
+            "Comment=Monitor serial and video device ports",
+            "Comment[ko]=시리얼·비디오 장치의 연결 상태 감시",
+            f"Exec={quote_desktop_exec(APPIMAGE_PATH)} --settings",
+            "Icon=device-port-monitor",
+            "Terminal=false",
+            "StartupNotify=true",
+            "Categories=Utility;",
+            "X-Device-Port-Monitor-AppImage=true",
+            f"X-AppImage-Path={APPIMAGE_PATH}",
+            "",
+        ]
+    )
+    temporary = f"{launcher_path}.tmp"
+    with open(temporary, "w", encoding="utf-8") as desktop_file:
+        desktop_file.write(contents)
+    os.replace(temporary, launcher_path)
+    os.chmod(launcher_path, 0o644)
+
+    startup_path = autostart_path()
+    try:
+        with open(startup_path, "r", encoding="utf-8") as desktop_file:
+            startup_contents = desktop_file.read()
+    except FileNotFoundError:
+        return
+    if (
+        "X-Device-Port-Monitor-AppImage=true" not in startup_contents
+        or f"X-AppImage-Path={APPIMAGE_PATH}" not in startup_contents
+    ):
+        return
+    startup_lines = [
+        "Icon=device-port-monitor" if line.startswith("Icon=") else line
+        for line in startup_contents.splitlines()
+    ]
+    temporary = f"{startup_path}.tmp"
+    with open(temporary, "w", encoding="utf-8") as desktop_file:
+        desktop_file.write("\n".join(startup_lines) + "\n")
+    os.replace(temporary, startup_path)
+
+
+def write_appimage_autostart(enabled):
+    path = autostart_path()
+    if not enabled:
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        return
+
+    install_appimage_integration()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    contents = "\n".join(
+        [
+            "[Desktop Entry]",
+            "Type=Application",
+            "Version=1.0",
+            "Name=Device Port Monitor",
+            "Name[ko]=장치 포트 모니터",
+            f"Exec={quote_desktop_exec(APPIMAGE_PATH)} --monitor",
+            "Icon=device-port-monitor",
+            "Terminal=false",
+            "StartupNotify=false",
+            "X-GNOME-Autostart-enabled=true",
+            "X-Device-Port-Monitor-AppImage=true",
+            f"X-AppImage-Path={APPIMAGE_PATH}",
+            "",
+        ]
+    )
+    temporary = f"{path}.tmp"
+    with open(temporary, "w", encoding="utf-8") as desktop_file:
+        desktop_file.write(contents)
+    os.replace(temporary, path)
+
+
+def monitor_is_running():
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    lock_path = os.path.join(runtime_dir, "device-port-monitor.lock")
+    lock_file = open(lock_path, "a", encoding="utf-8")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock_file.close()
+        return True
+    fcntl.flock(lock_file, fcntl.LOCK_UN)
+    lock_file.close()
+    return False
+
+
+def autostart_is_enabled():
+    if APPIMAGE_PATH:
+        return appimage_autostart_is_enabled()
     return run_systemctl("is-enabled", "--quiet", SERVICE_NAME).returncode == 0
 
 
-def service_is_active():
+def monitor_is_active():
+    if APPIMAGE_PATH:
+        return monitor_is_running()
     return run_systemctl("is-active", "--quiet", SERVICE_NAME).returncode == 0
+
+
+def set_autostart(enabled):
+    if APPIMAGE_PATH:
+        try:
+            write_appimage_autostart(enabled)
+            if enabled and not monitor_is_running():
+                subprocess.Popen(
+                    [APPIMAGE_PATH, "--monitor"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+        except OSError as error:
+            return False, str(error)
+        return True, ""
+
+    if enabled:
+        result = run_systemctl("enable", "--now", SERVICE_NAME)
+    else:
+        result = run_systemctl("disable", SERVICE_NAME)
+    detail = (result.stderr or result.stdout).strip()
+    return result.returncode == 0, detail
+
+
+def application_icon_path():
+    candidates = [
+        persistent_icon_path(),
+        os.path.join(APPDIR_PATH, "device-port-monitor.png"),
+        "/usr/share/pixmaps/device-port-monitor.png",
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    return ""
 
 
 class DevDirectoryWatcher:
@@ -101,7 +299,11 @@ class SettingsWindow(Gtk.Window):
         self.set_default_size(480, 360)
         self.set_resizable(False)
         self.set_border_width(20)
-        self.set_icon_name("drive-removable-media-symbolic")
+        icon_path = application_icon_path()
+        if icon_path:
+            self.set_icon_from_file(icon_path)
+        else:
+            self.set_icon_name("drive-removable-media-symbolic")
         self._syncing_switch = False
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
@@ -171,7 +373,8 @@ class SettingsWindow(Gtk.Window):
         button_box.add(close_button)
         content.pack_end(button_box, False, False, 0)
 
-        run_systemctl("daemon-reload")
+        if not APPIMAGE_PATH:
+            run_systemctl("daemon-reload")
         self._sync_service_state()
         self._sync_device_state()
         self.startup_switch.connect("notify::active", self._on_startup_changed)
@@ -180,8 +383,8 @@ class SettingsWindow(Gtk.Window):
         self.connect("destroy", self._on_destroy)
 
     def _sync_service_state(self):
-        enabled = service_is_enabled()
-        active = service_is_active()
+        enabled = autostart_is_enabled()
+        active = monitor_is_active()
 
         self._syncing_switch = True
         self.startup_switch.set_active(enabled)
@@ -208,15 +411,8 @@ class SettingsWindow(Gtk.Window):
         if self._syncing_switch:
             return
 
-        if switch.get_active():
-            result = run_systemctl("enable", "--now", SERVICE_NAME)
-        else:
-            # This setting controls the next login. Keep the current monitor and
-            # this settings window alive until the user logs out.
-            result = run_systemctl("disable", SERVICE_NAME)
-
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout).strip()
+        success, detail = set_autostart(switch.get_active())
+        if not success:
             self._show_error(detail or "systemctl 명령을 실행할 수 없습니다.")
         self._sync_service_state()
 
@@ -249,11 +445,16 @@ class DevicePortMonitor:
         self.devices = scan_devices()
         self.settings_window = None
 
+        icon_path = application_icon_path()
+        icon_name = "device-port-monitor" if icon_path else "drive-removable-media-symbolic"
         self.indicator = AppIndicator3.Indicator.new(
             "device-port-monitor",
-            "drive-removable-media-symbolic",
+            icon_name,
             AppIndicator3.IndicatorCategory.HARDWARE,
         )
+        if icon_path:
+            self.indicator.set_icon_theme_path(os.path.dirname(icon_path))
+            self.indicator.set_icon_full(icon_name, "Device Port Monitor")
         self.indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
         self.indicator.set_title("장치 포트 모니터")
 
@@ -347,8 +548,9 @@ class DevicePortMonitor:
         else:
             title = "장치 구성이 변경됨"
 
+        icon_path = application_icon_path()
         notification = Notify.Notification.new(
-            title, "\n\n".join(lines), "drive-removable-media-symbolic"
+            title, "\n\n".join(lines), icon_path or "drive-removable-media-symbolic"
         )
         notification.set_timeout(5000)
         notification.set_urgency(Notify.Urgency.NORMAL)
@@ -371,6 +573,8 @@ def acquire_single_instance_lock():
 
 
 def run_settings():
+    if APPIMAGE_PATH:
+        install_appimage_integration()
     window = SettingsWindow()
     window.connect("destroy", Gtk.main_quit)
     window.show_all()
@@ -384,6 +588,9 @@ def main():
         return 0
     if "--settings" in sys.argv:
         return run_settings()
+
+    if APPIMAGE_PATH:
+        install_appimage_integration()
 
     lock_file = acquire_single_instance_lock()
     monitor = DevicePortMonitor()

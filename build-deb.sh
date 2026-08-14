@@ -2,7 +2,7 @@
 set -eu
 
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-VERSION=1.0.0
+VERSION=1.1.0
 PACKAGE_NAME=device-port-monitor_${VERSION}_all.deb
 BUILD_DIR="$PROJECT_DIR/.build/device-port-monitor"
 DIST_DIR="$PROJECT_DIR/dist"
@@ -13,6 +13,7 @@ mkdir -p \
     "$BUILD_DIR/usr/bin" \
     "$BUILD_DIR/usr/lib/systemd/user" \
     "$BUILD_DIR/usr/share/applications" \
+    "$BUILD_DIR/usr/share/pixmaps" \
     "$BUILD_DIR/usr/share/doc/device-port-monitor" \
     "$DIST_DIR"
 
@@ -22,6 +23,8 @@ install -m 0644 "$PROJECT_DIR/device-port-monitor.service" \
     "$BUILD_DIR/usr/lib/systemd/user/device-port-monitor.service"
 install -m 0644 "$PROJECT_DIR/device-port-monitor.desktop" \
     "$BUILD_DIR/usr/share/applications/device-port-monitor.desktop"
+install -m 0644 "$PROJECT_DIR/device-port-monitor.png" \
+    "$BUILD_DIR/usr/share/pixmaps/device-port-monitor.png"
 install -m 0644 "$PROJECT_DIR/README.md" \
     "$BUILD_DIR/usr/share/doc/device-port-monitor/README.md"
 install -m 0644 "$PROJECT_DIR/LICENSE" \
