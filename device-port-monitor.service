@@ -5,7 +5,7 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/device-port-monitor
+ExecStart=/usr/lib/device-port-monitor/device-port-monitor-monitor --monitor
 Restart=on-failure
 RestartSec=2
 

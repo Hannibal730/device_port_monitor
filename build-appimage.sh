@@ -2,7 +2,7 @@
 set -eu
 
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-VERSION=1.1.0
+VERSION=1.2.0
 MACHINE_ARCH=$(uname -m)
 
 case "$MACHINE_ARCH" in
@@ -36,12 +36,15 @@ rm -rf "$APPDIR"
 mkdir -p \
     "$APPDIR/usr/bin" \
     "$APPDIR/usr/share/applications" \
+    "$APPDIR/usr/share/doc/device-port-monitor" \
     "$APPDIR/usr/share/icons/hicolor/256x256/apps" \
     "$DIST_DIR"
 
 install -m 0755 "$PROJECT_DIR/packaging/AppRun" "$APPDIR/AppRun"
 install -m 0755 "$PROJECT_DIR/device-port-monitor" \
     "$APPDIR/usr/bin/device-port-monitor"
+"$PROJECT_DIR/build-monitor.sh" \
+    "$APPDIR/usr/bin/device-port-monitor-monitor"
 install -m 0644 "$PROJECT_DIR/device-port-monitor.desktop" \
     "$APPDIR/device-port-monitor.desktop"
 install -m 0644 "$PROJECT_DIR/device-port-monitor.desktop" \
@@ -50,6 +53,10 @@ install -m 0644 "$PROJECT_DIR/device-port-monitor.png" \
     "$APPDIR/device-port-monitor.png"
 install -m 0644 "$PROJECT_DIR/device-port-monitor.png" \
     "$APPDIR/usr/share/icons/hicolor/256x256/apps/device-port-monitor.png"
+install -m 0644 "$PROJECT_DIR/LICENSE" \
+    "$APPDIR/usr/share/doc/device-port-monitor/LICENSE"
+install -m 0644 "$PROJECT_DIR/README.md" \
+    "$APPDIR/usr/share/doc/device-port-monitor/README.md"
 ln -s device-port-monitor.png "$APPDIR/.DirIcon"
 
 rm -f "$OUTPUT"

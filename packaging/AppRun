@@ -4,6 +4,10 @@ set -eu
 APPDIR=${APPDIR:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}
 export APPDIR
 
+if [ "${1:-}" = "--monitor" ]; then
+    exec "$APPDIR/usr/bin/device-port-monitor-monitor" "$@"
+fi
+
 if [ "$#" -eq 0 ]; then
     set -- --settings
 fi
