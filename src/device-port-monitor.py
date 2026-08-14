@@ -480,7 +480,7 @@ def run_native_monitor():
         os.path.join(APPDIR_PATH, "usr", "bin", "device-port-monitor-monitor"),
         "/usr/lib/device-port-monitor/device-port-monitor-monitor",
         os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             ".build",
             "device-port-monitor-monitor",
         ),

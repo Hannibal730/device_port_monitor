@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 VERSION=1.2.0
 MACHINE_ARCH=$(uname -m)
 
@@ -40,18 +41,18 @@ mkdir -p \
     "$APPDIR/usr/share/icons/hicolor/256x256/apps" \
     "$DIST_DIR"
 
-install -m 0755 "$PROJECT_DIR/packaging/AppRun" "$APPDIR/AppRun"
-install -m 0755 "$PROJECT_DIR/device-port-monitor" \
+install -m 0755 "$PROJECT_DIR/packaging/appimage/AppRun" "$APPDIR/AppRun"
+install -m 0755 "$PROJECT_DIR/src/device-port-monitor.py" \
     "$APPDIR/usr/bin/device-port-monitor"
-"$PROJECT_DIR/build-monitor.sh" \
+"$PROJECT_DIR/scripts/build-monitor.sh" \
     "$APPDIR/usr/bin/device-port-monitor-monitor"
-install -m 0644 "$PROJECT_DIR/device-port-monitor.desktop" \
+install -m 0644 "$PROJECT_DIR/packaging/common/device-port-monitor.desktop" \
     "$APPDIR/device-port-monitor.desktop"
-install -m 0644 "$PROJECT_DIR/device-port-monitor.desktop" \
+install -m 0644 "$PROJECT_DIR/packaging/common/device-port-monitor.desktop" \
     "$APPDIR/usr/share/applications/device-port-monitor.desktop"
-install -m 0644 "$PROJECT_DIR/device-port-monitor.png" \
+install -m 0644 "$PROJECT_DIR/assets/device-port-monitor.png" \
     "$APPDIR/device-port-monitor.png"
-install -m 0644 "$PROJECT_DIR/device-port-monitor.png" \
+install -m 0644 "$PROJECT_DIR/assets/device-port-monitor.png" \
     "$APPDIR/usr/share/icons/hicolor/256x256/apps/device-port-monitor.png"
 install -m 0644 "$PROJECT_DIR/LICENSE" \
     "$APPDIR/usr/share/doc/device-port-monitor/LICENSE"
