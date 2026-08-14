@@ -1,0 +1,13 @@
+[Unit]
+Description=Serial and video device port monitor
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/device-port-monitor
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

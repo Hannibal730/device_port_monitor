@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Device Port Monitor
+Name[ko]=장치 포트 모니터
+Comment=Monitor serial and video device ports
+Comment[ko]=시리얼·비디오 장치의 연결 상태 감시
+Exec=device-port-monitor --settings
+Icon=drive-removable-media-symbolic
+Terminal=false
+StartupNotify=true
+Categories=Utility;
+Keywords=USB;Serial;Camera;Device;Port;
+Keywords[ko]=USB;시리얼;카메라;장치;포트;

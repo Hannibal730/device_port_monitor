@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+"""Monitor serial/video ports with a GTK settings UI and AppIndicator."""
+
+import fcntl
+import glob
+import os
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("AppIndicator3", "0.1")
+gi.require_version("Gtk", "3.0")
+gi.require_version("Notify", "0.7")
+
+from gi.repository import AppIndicator3, Gio, GLib, Gtk, Notify
+
+
+APP_NAME = "Device Port Monitor"
+SERVICE_NAME = "device-port-monitor.service"
+DEVICE_PATTERNS = ("/dev/ttyACM*", "/dev/ttyUSB*", "/dev/video*")
+SERIAL_PREFIXES = ("/dev/ttyACM", "/dev/ttyUSB")
+WATCHED_NAMES = ("ttyACM", "ttyUSB", "video")
+DEBOUNCE_MS = 300
+
+
+def scan_devices():
+    """Return the same device paths covered by the original `usb` alias."""
+    devices = set()
+    for pattern in DEVICE_PATTERNS:
+        devices.update(glob.glob(pattern))
+    return sorted(devices)
+
+
+def split_devices(devices):
+    serial = [path for path in devices if path.startswith(SERIAL_PREFIXES)]
+    cameras = [path for path in devices if path.startswith("/dev/video")]
+    return serial, cameras
+
+
+def is_watched_name(name):
+    return name.startswith(WATCHED_NAMES)
+
+
+def run_systemctl(*arguments):
+    """Run systemctl for the current user's service manager."""
+    return subprocess.run(
+        ["systemctl", "--user", *arguments],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def service_is_enabled():
+    return run_systemctl("is-enabled", "--quiet", SERVICE_NAME).returncode == 0
+
+
+def service_is_active():
+    return run_systemctl("is-active", "--quiet", SERVICE_NAME).returncode == 0
+
+
+class DevDirectoryWatcher:
+    """Debounced GIO watcher shared by the indicator and settings window."""
+
+    def __init__(self, callback):
+        self.callback = callback
+        self.refresh_source = 0
+        dev_dir = Gio.File.new_for_path("/dev")
+        self.file_monitor = dev_dir.monitor_directory(
+            Gio.FileMonitorFlags.NONE, None
+        )
+        self.file_monitor.connect("changed", self._on_changed)
+
+    def _on_changed(self, _monitor, file_obj, _other_file, _event_type):
+        name = file_obj.get_basename() if file_obj else ""
+        if not name or not is_watched_name(name):
+            return
+
+        if self.refresh_source:
+            GLib.source_remove(self.refresh_source)
+        self.refresh_source = GLib.timeout_add(DEBOUNCE_MS, self._refresh)
+
+    def _refresh(self):
+        self.refresh_source = 0
+        self.callback()
+        return GLib.SOURCE_REMOVE
+
+    def close(self):
+        if self.refresh_source:
+            GLib.source_remove(self.refresh_source)
+            self.refresh_source = 0
+        self.file_monitor.cancel()
+
+
+class SettingsWindow(Gtk.Window):
+    """Small user-facing preferences window."""
+
+    def __init__(self):
+        super().__init__(title="장치 포트 모니터 설정")
+        self.set_default_size(480, 360)
+        self.set_resizable(False)
+        self.set_border_width(20)
+        self.set_icon_name("drive-removable-media-symbolic")
+        self._syncing_switch = False
+
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        self.add(content)
+
+        title = Gtk.Label()
+        title.set_markup("<span size='x-large' weight='bold'>장치 포트 모니터</span>")
+        title.set_xalign(0)
+        content.pack_start(title, False, False, 0)
+
+        description = Gtk.Label(
+            label="시리얼 포트와 비디오 장치의 연결 상태를 상단바와 알림으로 확인합니다."
+        )
+        description.set_xalign(0)
+        description.set_line_wrap(True)
+        content.pack_start(description, False, False, 0)
+
+        startup_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        startup_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        startup_title = Gtk.Label(label="로그인 시 자동 실행")
+        startup_title.set_xalign(0)
+        startup_title.set_markup("<b>로그인 시 자동 실행</b>")
+        startup_detail = Gtk.Label(
+            label="설정은 현재 사용자에게 저장되며, 켜면 모니터가 바로 시작됩니다."
+        )
+        startup_detail.set_xalign(0)
+        startup_detail.get_style_context().add_class("dim-label")
+        startup_text.pack_start(startup_title, False, False, 0)
+        startup_text.pack_start(startup_detail, False, False, 0)
+        startup_box.pack_start(startup_text, True, True, 0)
+
+        self.startup_switch = Gtk.Switch()
+        self.startup_switch.set_valign(Gtk.Align.CENTER)
+        startup_box.pack_end(self.startup_switch, False, False, 0)
+        content.pack_start(startup_box, False, False, 0)
+
+        separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        content.pack_start(separator, False, False, 0)
+
+        status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        status_title = Gtk.Label()
+        status_title.set_markup("<b>현재 상태</b>")
+        status_title.set_xalign(0)
+        status_box.pack_start(status_title, True, True, 0)
+        self.service_status = Gtk.Label()
+        self.service_status.set_xalign(1)
+        status_box.pack_end(self.service_status, False, False, 0)
+        content.pack_start(status_box, False, False, 0)
+
+        device_frame = Gtk.Frame()
+        device_frame.set_shadow_type(Gtk.ShadowType.IN)
+        self.device_label = Gtk.Label()
+        self.device_label.set_xalign(0)
+        self.device_label.set_yalign(0)
+        self.device_label.set_selectable(True)
+        self.device_label.set_margin_start(12)
+        self.device_label.set_margin_end(12)
+        self.device_label.set_margin_top(10)
+        self.device_label.set_margin_bottom(10)
+        device_frame.add(self.device_label)
+        content.pack_start(device_frame, True, True, 0)
+
+        button_box = Gtk.ButtonBox(orientation=Gtk.Orientation.HORIZONTAL)
+        button_box.set_layout(Gtk.ButtonBoxStyle.END)
+        close_button = Gtk.Button(label="닫기")
+        close_button.connect("clicked", lambda _button: self.close())
+        button_box.add(close_button)
+        content.pack_end(button_box, False, False, 0)
+
+        run_systemctl("daemon-reload")
+        self._sync_service_state()
+        self._sync_device_state()
+        self.startup_switch.connect("notify::active", self._on_startup_changed)
+        self.watcher = DevDirectoryWatcher(self._sync_device_state)
+        self.status_source = GLib.timeout_add_seconds(2, self._on_status_timer)
+        self.connect("destroy", self._on_destroy)
+
+    def _sync_service_state(self):
+        enabled = service_is_enabled()
+        active = service_is_active()
+
+        self._syncing_switch = True
+        self.startup_switch.set_active(enabled)
+        self._syncing_switch = False
+
+        if active and enabled:
+            text = "실행 중 · 자동 실행 켜짐"
+        elif active:
+            text = "실행 중 · 다음 로그인부터 꺼짐"
+        elif enabled:
+            text = "시작 중 · 자동 실행 켜짐"
+        else:
+            text = "중지됨 · 자동 실행 꺼짐"
+        self.service_status.set_text(text)
+
+    def _sync_device_state(self):
+        devices = scan_devices()
+        serial, cameras = split_devices(devices)
+        lines = [f"시리얼 {len(serial)}개 · 비디오 {len(cameras)}개"]
+        lines.extend(devices if devices else ["감지된 장치가 없습니다."])
+        self.device_label.set_text("\n".join(lines))
+
+    def _on_startup_changed(self, switch, _parameter):
+        if self._syncing_switch:
+            return
+
+        if switch.get_active():
+            result = run_systemctl("enable", "--now", SERVICE_NAME)
+        else:
+            # This setting controls the next login. Keep the current monitor and
+            # this settings window alive until the user logs out.
+            result = run_systemctl("disable", SERVICE_NAME)
+
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            self._show_error(detail or "systemctl 명령을 실행할 수 없습니다.")
+        self._sync_service_state()
+
+    def _on_status_timer(self):
+        self._sync_service_state()
+        return GLib.SOURCE_CONTINUE
+
+    def _show_error(self, detail):
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            modal=True,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.CLOSE,
+            text="자동 실행 설정을 저장하지 못했습니다.",
+        )
+        dialog.format_secondary_text(detail)
+        dialog.run()
+        dialog.destroy()
+
+    def _on_destroy(self, _window):
+        if self.status_source:
+            GLib.source_remove(self.status_source)
+            self.status_source = 0
+        self.watcher.close()
+
+
+class DevicePortMonitor:
+    def __init__(self):
+        Notify.init("device-port-monitor")
+        self.devices = scan_devices()
+        self.settings_window = None
+
+        self.indicator = AppIndicator3.Indicator.new(
+            "device-port-monitor",
+            "drive-removable-media-symbolic",
+            AppIndicator3.IndicatorCategory.HARDWARE,
+        )
+        self.indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+        self.indicator.set_title("장치 포트 모니터")
+
+        self.menu = Gtk.Menu()
+        self.indicator.set_menu(self.menu)
+        self._render()
+        self.watcher = DevDirectoryWatcher(self._refresh)
+
+    def _refresh(self):
+        current = scan_devices()
+        if current == self.devices:
+            return
+
+        previous = set(self.devices)
+        latest = set(current)
+        added = sorted(latest - previous)
+        removed = sorted(previous - latest)
+        self.devices = current
+        self._render()
+        self._notify(added, removed)
+
+    def _render(self):
+        serial, cameras = split_devices(self.devices)
+        label = f"SER {len(serial)} · CAM {len(cameras)}"
+        self.indicator.set_label(label, "SER 99 · CAM 99")
+
+        for child in self.menu.get_children():
+            self.menu.remove(child)
+
+        summary = Gtk.MenuItem(label=f"시리얼 {len(serial)}개 / 비디오 {len(cameras)}개")
+        summary.set_sensitive(False)
+        self.menu.append(summary)
+        self.menu.append(Gtk.SeparatorMenuItem())
+        self._append_section("시리얼 포트", serial)
+        self.menu.append(Gtk.SeparatorMenuItem())
+        self._append_section("비디오 장치", cameras)
+        self.menu.append(Gtk.SeparatorMenuItem())
+
+        settings_item = Gtk.MenuItem(label="설정…")
+        settings_item.connect("activate", self._show_settings)
+        self.menu.append(settings_item)
+
+        quit_item = Gtk.MenuItem(label="종료")
+        quit_item.connect("activate", self._quit)
+        self.menu.append(quit_item)
+        self.menu.show_all()
+
+    def _append_section(self, title, paths):
+        heading = Gtk.MenuItem(label=title)
+        heading.set_sensitive(False)
+        self.menu.append(heading)
+
+        if not paths:
+            empty = Gtk.MenuItem(label="  (없음)")
+            empty.set_sensitive(False)
+            self.menu.append(empty)
+            return
+
+        for path in paths:
+            item = Gtk.MenuItem(label=f"  {path}")
+            item.set_sensitive(False)
+            self.menu.append(item)
+
+    def _show_settings(self, _item):
+        if self.settings_window is None:
+            self.settings_window = SettingsWindow()
+            self.settings_window.connect("destroy", self._settings_closed)
+        self.settings_window.show_all()
+        self.settings_window.present()
+
+    def _settings_closed(self, _window):
+        self.settings_window = None
+
+    def _quit(self, _item):
+        if self.settings_window is not None:
+            self.settings_window.destroy()
+        Gtk.main_quit()
+
+    @staticmethod
+    def _notify(added, removed):
+        lines = []
+        if added:
+            lines.append("연결:\n" + "\n".join(added))
+        if removed:
+            lines.append("분리:\n" + "\n".join(removed))
+
+        if added and not removed:
+            title = "장치가 연결됨"
+        elif removed and not added:
+            title = "장치가 분리됨"
+        else:
+            title = "장치 구성이 변경됨"
+
+        notification = Notify.Notification.new(
+            title, "\n\n".join(lines), "drive-removable-media-symbolic"
+        )
+        notification.set_timeout(5000)
+        notification.set_urgency(Notify.Urgency.NORMAL)
+        try:
+            notification.show()
+        except GLib.Error as error:
+            print(f"알림 표시 실패: {error}", file=sys.stderr)
+
+
+def acquire_single_instance_lock():
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    lock_path = os.path.join(runtime_dir, "device-port-monitor.lock")
+    lock_file = open(lock_path, "w", encoding="utf-8")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("장치 포트 모니터가 이미 실행 중입니다.", file=sys.stderr)
+        sys.exit(0)
+    return lock_file
+
+
+def run_settings():
+    window = SettingsWindow()
+    window.connect("destroy", Gtk.main_quit)
+    window.show_all()
+    Gtk.main()
+    return 0
+
+
+def main():
+    if "--print-status" in sys.argv:
+        print("\n".join(scan_devices()))
+        return 0
+    if "--settings" in sys.argv:
+        return run_settings()
+
+    lock_file = acquire_single_instance_lock()
+    monitor = DevicePortMonitor()
+    Gtk.main()
+
+    # Keep these objects alive for as long as the GTK main loop runs.
+    _ = (lock_file, monitor)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
