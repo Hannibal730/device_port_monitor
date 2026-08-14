@@ -1,3 +1,8 @@
+<img src="https://github.com/user-attachments/assets/07993c55-2ca7-49ab-90b6-4a213da03644" width="400" alt="toolbar_widget" />
+
+<img src="https://github.com/user-attachments/assets/40c9ef43-649b-45f8-9bd7-e6872158f989" width="400" alt="ui" />
+
+
 # Device Port Monitor
 
 Ubuntu GNOME 상단바에서 `/dev/ttyACM*`, `/dev/ttyUSB*`, `/dev/video*` 장치를
