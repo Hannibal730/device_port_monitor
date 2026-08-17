@@ -1,6 +1,6 @@
-<img src="https://github.com/user-attachments/assets/07993c55-2ca7-49ab-90b6-4a213da03644" width="400" alt="toolbar_widget" />
+<img src="https://github.com/user-attachments/assets/8f565b5f-4d55-4d6f-b392-b568d1371096" width="400" alt="toolbar_widget" />
 
-<img src="https://github.com/user-attachments/assets/40c9ef43-649b-45f8-9bd7-e6872158f989" width="400" alt="ui" />
+<img src="https://github.com/user-attachments/assets/c85d1beb-ee4b-4b3d-9dc3-69a9b8c6e5a0" width="500" alt="ui" />
 
 
 # Device Port Monitor
