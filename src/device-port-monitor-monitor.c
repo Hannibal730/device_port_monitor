@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <gio/gio.h>
 #include <glib.h>
+#include <malloc.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/file.h>
@@ -313,7 +314,7 @@ static void append_device_section(
     }
 }
 
-static void settings_activated(
+static void open_monitor_activated(
     GtkWidget *item, gpointer user_data) {
     (void)item;
     (void)user_data;
@@ -353,15 +354,15 @@ static void render_menu(MonitorApp *app) {
     append_device_section(new_menu, "Video devices", devices->video);
     append_separator(new_menu);
 
-    GtkWidget *settings = gtk_menu_item_new_with_label("Settings");
+    GtkWidget *open_monitor = gtk_menu_item_new_with_label("Open Monitor");
     g_signal_connect_data(
-        settings,
+        open_monitor,
         "activate",
-        G_CALLBACK(settings_activated),
+        G_CALLBACK(open_monitor_activated),
         app,
         NULL,
         0);
-    gtk_menu_shell_append(new_menu, settings);
+    gtk_menu_shell_append(new_menu, open_monitor);
 
     GtkWidget *quit = gtk_menu_item_new_with_label("Quit");
     g_signal_connect_data(
@@ -400,6 +401,7 @@ static gboolean refresh_devices(gpointer user_data) {
     render_menu(app);
     send_notification(previous, current, app->icon_path);
     device_lists_free(previous);
+    malloc_trim(0);
     return G_SOURCE_REMOVE;
 }
 
@@ -511,6 +513,7 @@ int main(int argc, char **argv) {
         G_CALLBACK(dev_directory_changed),
         &app);
 
+    malloc_trim(0);
     gtk_main();
 
     if (app.refresh_source != 0) {

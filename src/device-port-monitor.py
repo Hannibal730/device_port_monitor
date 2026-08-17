@@ -8,12 +8,6 @@ import shutil
 import subprocess
 import sys
 
-import gi
-
-gi.require_version("Gtk", "3.0")
-
-from gi.repository import Gio, GLib, Gtk
-
 
 APP_NAME = "Device Port Monitor"
 SERVICE_NAME = "device-port-monitor.service"
@@ -21,6 +15,61 @@ APPIMAGE_PATH = os.environ.get("APPIMAGE", "")
 APPDIR_PATH = os.environ.get("APPDIR", "")
 WATCHED_NAMES = ("ttyACM", "ttyUSB", "video")
 DEBOUNCE_MS = 300
+SETTINGS_LOCK_FILE = None
+
+
+def native_monitor_candidates():
+    return (
+        os.path.join(APPDIR_PATH, "usr", "bin", "device-port-monitor-monitor"),
+        "/usr/lib/device-port-monitor/device-port-monitor-monitor",
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            ".build",
+            "device-port-monitor-monitor",
+        ),
+    )
+
+
+def run_native_monitor():
+    for candidate in native_monitor_candidates():
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            os.execv(candidate, [candidate, "--monitor"])
+    print("Native monitor executable not found.", file=sys.stderr)
+    return 1
+
+
+def acquire_settings_instance_lock():
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    lock_path = os.path.join(runtime_dir, "device-port-monitor-settings.lock")
+    lock_file = None
+    try:
+        lock_file = open(lock_path, "a", encoding="utf-8")
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock_file.close()
+        return None
+    except OSError as error:
+        if lock_file is not None:
+            lock_file.close()
+        print(f"Unable to lock the settings window: {error}", file=sys.stderr)
+        return False
+    return lock_file
+
+
+if __name__ == "__main__":
+    if "--monitor" in sys.argv:
+        raise SystemExit(run_native_monitor())
+    if "--print-status" not in sys.argv:
+        SETTINGS_LOCK_FILE = acquire_settings_instance_lock()
+        if SETTINGS_LOCK_FILE is None:
+            raise SystemExit(0)
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+
+from gi.repository import Gdk, Gio, GLib, Gtk
 
 
 def scan_devices():
@@ -42,6 +91,68 @@ def categorize_devices(devices):
         [path for path in devices if path.startswith("/dev/ttyUSB")],
         [path for path in devices if path.startswith("/dev/video")],
     )
+
+
+def udev_properties(path):
+    """Return udev metadata for a device without keeping helper processes alive."""
+    try:
+        result = subprocess.run(
+            ["udevadm", "info", "--query=property", f"--name={path}"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+    if result.returncode != 0:
+        return {}
+
+    properties = {}
+    for line in result.stdout.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            properties[key] = value
+    return properties
+
+
+def clean_device_name(value):
+    return (
+        value.replace("\\x20", " ")
+        .replace("\\x2c", ",")
+        .replace("_", " ")
+        .strip()
+    )
+
+
+def device_description(path):
+    properties = udev_properties(path)
+
+    if path.startswith("/dev/video"):
+        product = clean_device_name(
+            properties.get("ID_V4L_PRODUCT")
+            or properties.get("ID_MODEL_FROM_DATABASE")
+            or properties.get("ID_MODEL", "")
+        )
+        capabilities = properties.get("ID_V4L_CAPABILITIES", "")
+        role = "Video capture" if ":capture:" in capabilities else "Camera metadata"
+        return f"{product} · {role}" if product else role
+
+    vendor = clean_device_name(
+        properties.get("ID_VENDOR_FROM_DATABASE")
+        or properties.get("ID_VENDOR", "")
+    )
+    model = clean_device_name(
+        properties.get("ID_MODEL_FROM_DATABASE")
+        or properties.get("ID_MODEL", "")
+    )
+    hardware = " ".join(part for part in (vendor, model) if part)
+    role = (
+        "USB ACM serial device"
+        if path.startswith("/dev/ttyACM")
+        else "USB serial adapter"
+    )
+    return f"{hardware} · {role}" if hardware else role
 
 
 def is_watched_name(name):
@@ -227,12 +338,6 @@ def autostart_is_enabled():
     return run_systemctl("is-enabled", "--quiet", SERVICE_NAME).returncode == 0
 
 
-def monitor_is_active():
-    if APPIMAGE_PATH:
-        return monitor_is_running()
-    return run_systemctl("is-active", "--quiet", SERVICE_NAME).returncode == 0
-
-
 def set_autostart(enabled):
     if APPIMAGE_PATH:
         try:
@@ -306,9 +411,9 @@ class SettingsWindow(Gtk.Window):
     """Small user-facing preferences window."""
 
     def __init__(self):
-        super().__init__(title="Device Port Monitor Settings")
-        self.set_default_size(480, 360)
-        self.set_resizable(False)
+        super().__init__(title="Device Port Monitor")
+        self.set_default_size(700, -1)
+        self.set_resizable(True)
         self.set_border_width(20)
         icon_path = application_icon_path()
         if icon_path:
@@ -316,6 +421,7 @@ class SettingsWindow(Gtk.Window):
         else:
             self.set_icon_name("drive-removable-media-symbolic")
         self._syncing_switch = False
+        self.device_descriptions = {}
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         self.add(content)
@@ -354,28 +460,56 @@ class SettingsWindow(Gtk.Window):
         separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         content.pack_start(separator, False, False, 0)
 
-        status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        status_title = Gtk.Label()
-        status_title.set_markup("<b>Current status</b>")
-        status_title.set_xalign(0)
-        status_box.pack_start(status_title, True, True, 0)
-        self.service_status = Gtk.Label()
-        self.service_status.set_xalign(1)
-        status_box.pack_end(self.service_status, False, False, 0)
-        content.pack_start(status_box, False, False, 0)
+        device_scroller = Gtk.ScrolledWindow()
+        device_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        device_scroller.set_shadow_type(Gtk.ShadowType.NONE)
+        device_scroller.set_propagate_natural_height(True)
+        display = Gdk.Display.get_default()
+        monitor = display.get_primary_monitor() if display is not None else None
+        if monitor is None and display is not None and display.get_n_monitors() > 0:
+            monitor = display.get_monitor(0)
+        screen_height = monitor.get_workarea().height if monitor is not None else 900
+        device_scroller.set_max_content_height(max(280, int(screen_height * 0.52)))
 
-        device_frame = Gtk.Frame()
-        device_frame.set_shadow_type(Gtk.ShadowType.IN)
-        self.device_label = Gtk.Label()
-        self.device_label.set_xalign(0)
-        self.device_label.set_yalign(0)
-        self.device_label.set_selectable(True)
-        self.device_label.set_margin_start(12)
-        self.device_label.set_margin_end(12)
-        self.device_label.set_margin_top(10)
-        self.device_label.set_margin_bottom(10)
-        device_frame.add(self.device_label)
-        content.pack_start(device_frame, True, True, 0)
+        device_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.device_sections = {}
+        for section_name in ("ACM", "USB", "VIDEO"):
+            frame = Gtk.Frame()
+            frame.set_shadow_type(Gtk.ShadowType.IN)
+
+            section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            section.set_margin_start(12)
+            section.set_margin_end(12)
+            section.set_margin_top(9)
+            section.set_margin_bottom(10)
+
+            header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            section_title = Gtk.Label()
+            section_title.set_markup(f"<b>{section_name}</b>")
+            section_title.set_xalign(0)
+            header.pack_start(section_title, True, True, 0)
+
+            count_label = Gtk.Label(label="0")
+            count_label.set_xalign(1)
+            count_label.get_style_context().add_class("dim-label")
+            header.pack_end(count_label, False, False, 0)
+            section.pack_start(header, False, False, 0)
+            section.pack_start(
+                Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL),
+                False,
+                False,
+                0,
+            )
+
+            grid = Gtk.Grid(column_spacing=22, row_spacing=5)
+            grid.set_column_homogeneous(False)
+            section.pack_start(grid, False, False, 0)
+            frame.add(section)
+            device_list.pack_start(frame, False, False, 0)
+            self.device_sections[section_name] = (count_label, grid)
+
+        device_scroller.add(device_list)
+        content.pack_start(device_scroller, True, True, 0)
 
         footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         copyright_label = Gtk.Label()
@@ -403,38 +537,69 @@ class SettingsWindow(Gtk.Window):
 
     def _sync_service_state(self):
         enabled = autostart_is_enabled()
-        active = monitor_is_active()
 
         self._syncing_switch = True
         self.startup_switch.set_active(enabled)
         self._syncing_switch = False
 
-        if active and enabled:
-            text = "Running · autostart enabled"
-        elif active:
-            text = "Running · autostart disabled"
-        elif enabled:
-            text = "Starting · autostart enabled"
-        else:
-            text = "Stopped · autostart disabled"
-        self.service_status.set_text(text)
-
     def _sync_device_state(self):
         devices = scan_devices()
+        active_devices = set(devices)
+        self.device_descriptions = {
+            path: description
+            for path, description in self.device_descriptions.items()
+            if path in active_devices
+        }
         acm, usb, video = categorize_devices(devices)
-        lines = [f"ACM {len(acm)} · USB {len(usb)} · VIDEO {len(video)}"]
-        lines.extend(
-            [
-                self._format_device_group("ACM", acm),
-                self._format_device_group("USB", usb),
-                self._format_device_group("VIDEO", video),
-            ]
-        )
-        self.device_label.set_text("\n".join(lines))
+        for section_name, section_devices in (
+            ("ACM", acm),
+            ("USB", usb),
+            ("VIDEO", video),
+        ):
+            self._update_device_section(section_name, section_devices)
 
-    @staticmethod
-    def _format_device_group(name, devices):
-        return f"{name}: {', '.join(devices) if devices else 'none'}"
+    def _update_device_section(self, section_name, devices):
+        count_label, grid = self.device_sections[section_name]
+        count_label.set_text(str(len(devices)))
+        for child in grid.get_children():
+            grid.remove(child)
+
+        device_header = Gtk.Label()
+        device_header.set_markup("<small><b>Device</b></small>")
+        device_header.set_xalign(0)
+        device_header.get_style_context().add_class("dim-label")
+        grid.attach(device_header, 0, 0, 1, 1)
+
+        description_header = Gtk.Label()
+        description_header.set_markup("<small><b>Description</b></small>")
+        description_header.set_xalign(0)
+        description_header.get_style_context().add_class("dim-label")
+        grid.attach(description_header, 1, 0, 1, 1)
+
+        if not devices:
+            empty_label = Gtk.Label(label="No devices")
+            empty_label.set_xalign(0)
+            empty_label.get_style_context().add_class("dim-label")
+            grid.attach(empty_label, 0, 1, 2, 1)
+        else:
+            for row, path in enumerate(devices, start=1):
+                path_label = Gtk.Label(label=path)
+                path_label.set_xalign(0)
+                path_label.set_selectable(True)
+                grid.attach(path_label, 0, row, 1, 1)
+
+                description = self.device_descriptions.get(path)
+                if description is None:
+                    description = device_description(path)
+                    self.device_descriptions[path] = description
+                description_label = Gtk.Label(label=description)
+                description_label.set_xalign(0)
+                description_label.set_line_wrap(True)
+                description_label.set_max_width_chars(48)
+                description_label.set_hexpand(True)
+                grid.attach(description_label, 1, row, 1, 1)
+
+        grid.show_all()
 
     def _on_startup_changed(self, switch, _parameter):
         if self._syncing_switch:
@@ -473,23 +638,6 @@ def run_settings():
     window.show_all()
     Gtk.main()
     return 0
-
-
-def run_native_monitor():
-    candidates = [
-        os.path.join(APPDIR_PATH, "usr", "bin", "device-port-monitor-monitor"),
-        "/usr/lib/device-port-monitor/device-port-monitor-monitor",
-        os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            ".build",
-            "device-port-monitor-monitor",
-        ),
-    ]
-    for candidate in candidates:
-        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            os.execv(candidate, [candidate, "--monitor"])
-    print("Native monitor executable not found.", file=sys.stderr)
-    return 1
 
 
 def main():

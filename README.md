@@ -15,9 +15,11 @@ top bar.
 - Shows current device paths when the top-bar icon is clicked
 - Shows desktop notifications when devices are connected or disconnected
 - Plays different notification sounds for device connection and disconnection
+- Shows device descriptions and distinguishes video capture from camera metadata
 - Provides a login autostart preference
 - Uses an event-driven C/GLib monitor with no polling
 - Runs the Python/GTK UI only while the settings window is open
+- Prevents duplicate settings windows from consuming additional memory
 
 ## Supported Environments
 
@@ -68,7 +70,7 @@ The top-bar counters represent the following devices:
 
 Click the top-bar icon to see all device paths and the following actions:
 
-- **Settings**: Open the settings window
+- **Open Monitor**: Open the device monitor window
 - **Quit**: Stop the current monitor
 
 Using **Quit** does not change the autostart preference, so the monitor starts
@@ -86,15 +88,17 @@ and exits immediately after playing the sound.
 The following results were measured on Ubuntu 22.04 x86_64 with GNOME, using
 the AppImage while the settings window was closed:
 
-- Service memory: approximately `8.9 MB`
-- Total PSS (Proportional Set Size): approximately `9.2 MB`
-- Idle CPU usage: approximately `0.03%` of one CPU core
+- Native monitor PSS: approximately `7.7 MB`
+- AppImage runtime PSS: approximately `1.7 MB`
+- Total PSS (Proportional Set Size): approximately `9.4 MB`
+- Idle CPU usage: approximately `0.1%` or less of one CPU core
 - Resident Python processes: none
 
 The Python/GTK process runs only while the settings window is open and exits
-completely when the window is closed. Actual usage may vary with the Ubuntu
-version, desktop environment, AppIndicator implementation, and shared
-libraries installed on the system.
+completely when the window is closed. Duplicate settings-window requests exit
+before GTK is loaded. Actual usage may vary with the Ubuntu version, desktop
+environment, AppIndicator implementation, and shared libraries installed on
+the system.
 
 ## Removal
 
@@ -127,9 +131,11 @@ Ubuntu GNOME 상단바에서 `/dev/ttyACM*`, `/dev/ttyUSB*`, `/dev/video*` 장�
 - 상단바 아이콘을 클릭하면 현재 장치 경로 표시
 - 장치 연결·분리 시 데스크톱 알림 표시
 - 장치 연결과 분리에 서로 다른 알림음 재생
+- 장치 설명을 표시하고 영상 캡처와 카메라 메타데이터 노드를 구분
 - 로그인 시 자동 실행 설정
 - 이벤트 기반 C/GLib 모니터 사용(반복 폴링 없음)
 - 설정창을 열 때만 Python/GTK UI 실행
+- 설정창 중복 실행을 차단하여 추가 메모리 사용 방지
 
 ## 지원 환경
 
@@ -178,7 +184,7 @@ AppImage는 별도 설치 없이 설정창을 연다. 자동 실행을 켠 뒤�
 
 상단바 아이콘을 클릭하면 전체 장치 경로와 다음 메뉴가 표시된다.
 
-- **Settings**: 설정창 열기
+- **Open Monitor**: 장치 모니터 창 열기
 - **Quit**: 현재 모니터 종료
 
 **Quit**으로 종료해도 자동 실행 설정은 유지되므로 다음 로그인 시 다시 실행된다.
@@ -194,14 +200,16 @@ AppImage는 별도 설치 없이 설정창을 연다. 자동 실행을 켠 뒤�
 Ubuntu 22.04 x86_64 GNOME 환경에서 AppImage를 실행하고 설정창을 닫은 상태로
 측정한 결과는 다음과 같다.
 
-- 서비스 메모리: 약 `8.9 MB`
-- 총 PSS(Proportional Set Size): 약 `9.2 MB`
-- 대기 중 CPU 사용률: 단일 CPU 코어 기준 약 `0.03%`
+- 네이티브 모니터 PSS: 약 `7.7 MB`
+- AppImage 런타임 PSS: 약 `1.7 MB`
+- 총 PSS(Proportional Set Size): 약 `9.4 MB`
+- 대기 중 CPU 사용률: 단일 CPU 코어 기준 약 `0.1%` 이하
 - 상시 Python 프로세스: 없음
 
 설정창을 열 때만 Python/GTK 프로세스가 추가로 실행되며, 설정창을 닫으면 완전히
-종료된다. 실제 사용량은 Ubuntu 버전, 데스크톱 환경, AppIndicator 구현과 시스템에
-설치된 공유 라이브러리에 따라 달라질 수 있다.
+종료된다. 중복 설정창 실행 요청은 GTK를 불러오기 전에 바로 종료된다. 실제 사용량은
+Ubuntu 버전, 데스크톱 환경, AppIndicator 구현과 시스템에 설치된 공유 라이브러리에
+따라 달라질 수 있다.
 
 ## 제거 방법
 
