@@ -14,6 +14,7 @@ top bar.
 - Displays `ACM n · USB n · VID n` in the top bar
 - Shows current device paths when the top-bar icon is clicked
 - Shows desktop notifications when devices are connected or disconnected
+- Plays different notification sounds for device connection and disconnection
 - Provides a login autostart preference
 - Uses an event-driven C/GLib monitor with no polling
 - Runs the Python/GTK UI only while the settings window is open
@@ -79,6 +80,9 @@ The top-bar monitor is an event-driven C/GLib program that runs only when a
 device change occurs. It does not poll device status periodically, which keeps
 idle CPU usage very low.
 
+The notification sound player also runs only when a device change is detected
+and exits immediately after playing the sound.
+
 The following results were measured on Ubuntu 22.04 x86_64 with GNOME, using
 the AppImage while the settings window was closed:
 
@@ -122,6 +126,7 @@ Ubuntu GNOME 상단바에서 `/dev/ttyACM*`, `/dev/ttyUSB*`, `/dev/video*` 장�
 - 상단바에 `ACM n · USB n · VID n` 표시
 - 상단바 아이콘을 클릭하면 현재 장치 경로 표시
 - 장치 연결·분리 시 데스크톱 알림 표시
+- 장치 연결과 분리에 서로 다른 알림음 재생
 - 로그인 시 자동 실행 설정
 - 이벤트 기반 C/GLib 모니터 사용(반복 폴링 없음)
 - 설정창을 열 때만 Python/GTK UI 실행
@@ -182,6 +187,9 @@ AppImage는 별도 설치 없이 설정창을 연다. 자동 실행을 켠 뒤�
 
 상단바 모니터는 장치 변화가 있을 때만 동작하는 C/GLib 이벤트 기반 프로그램이다.
 장치 상태를 주기적으로 조회하지 않으므로 대기 중 CPU 사용량이 매우 낮다.
+
+알림음 재생 프로세스도 장치 변화가 감지된 순간에만 실행되고 소리 재생 후 바로
+종료된다.
 
 Ubuntu 22.04 x86_64 GNOME 환경에서 AppImage를 실행하고 설정창을 닫은 상태로
 측정한 결과는 다음과 같다.

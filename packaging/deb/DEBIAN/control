@@ -3,9 +3,10 @@ Version: 1.2.0
 Section: utils
 Priority: optional
 Architecture: any
-Depends: python3, python3-gi, gir1.2-gtk-3.0, libglib2.0-0, libgtk-3-0, libayatana-appindicator3-1, libnotify-bin, systemd
+Depends: python3, python3-gi, gir1.2-gtk-3.0, libglib2.0-0, libgtk-3-0, libayatana-appindicator3-1, libnotify-bin, gnome-session-canberra, systemd
 Recommends: gnome-shell-extension-appindicator
 Maintainer: cds730@konkuk.ac.kr
 Description: GNOME top-bar monitor for ACM, USB serial, and video devices
  Shows ttyACM, ttyUSB, and video device counts as separate AppIndicator groups,
- sends connection notifications, and provides a small autostart settings UI.
+ sends notifications with distinct connection sounds, and provides a small
+ autostart settings UI.

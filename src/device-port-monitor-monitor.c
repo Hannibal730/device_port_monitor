@@ -205,6 +205,32 @@ static void spawn_nonblocking(gchar **arguments) {
     g_child_watch_add(process_id, child_exited, NULL);
 }
 
+static void play_device_sound(gboolean has_added, gboolean has_removed) {
+    const gchar *sound_id = "message";
+    const gchar *description = "Device configuration changed";
+    if (has_added && !has_removed) {
+        sound_id = "device-added";
+        description = "Device connected";
+    } else if (has_removed && !has_added) {
+        sound_id = "device-removed";
+        description = "Device disconnected";
+    }
+
+    gchar *sound_argument = g_strdup_printf("--id=%s", sound_id);
+    gchar *description_argument = g_strdup_printf(
+        "--description=%s", description);
+    gchar *arguments[] = {
+        "canberra-gtk-play",
+        sound_argument,
+        description_argument,
+        "--cache-control=permanent",
+        NULL,
+    };
+    spawn_nonblocking(arguments);
+    g_free(description_argument);
+    g_free(sound_argument);
+}
+
 static void send_notification(
     const DeviceLists *previous,
     const DeviceLists *current,
@@ -257,6 +283,7 @@ static void send_notification(
         NULL,
     };
     spawn_nonblocking(arguments);
+    play_device_sound(has_added, has_removed);
     g_free(icon_argument);
     g_string_free(body, TRUE);
 }
