@@ -206,6 +206,28 @@ static void spawn_nonblocking(gchar **arguments) {
     g_child_watch_add(process_id, child_exited, NULL);
 }
 
+static gchar *find_device_sound_file(const gchar *sound_id) {
+    const gchar *sound_directories[] = {
+        "/usr/share/sounds/Yaru/stereo",
+        "/usr/share/sounds/freedesktop/stereo",
+        NULL,
+    };
+    gchar *filename = g_strconcat(sound_id, ".oga", NULL);
+
+    for (guint index = 0; sound_directories[index] != NULL; ++index) {
+        gchar *path = g_build_filename(
+            sound_directories[index], filename, NULL);
+        if (g_file_test(path, G_FILE_TEST_IS_REGULAR)) {
+            g_free(filename);
+            return path;
+        }
+        g_free(path);
+    }
+
+    g_free(filename);
+    return NULL;
+}
+
 static void play_device_sound(gboolean has_added, gboolean has_removed) {
     const gchar *sound_id = "message";
     const gchar *description = "Device configuration changed";
@@ -217,6 +239,28 @@ static void play_device_sound(gboolean has_added, gboolean has_removed) {
         description = "Device disconnected";
     }
 
+    /*
+     * Play the file directly so the notification remains audible when the
+     * desktop's event-sounds setting or alert-volume stream is disabled.
+     * paplay also works through PipeWire's PulseAudio compatibility layer.
+     */
+    gchar *sound_file = find_device_sound_file(sound_id);
+    if (sound_file != NULL) {
+        gchar *player = g_find_program_in_path("paplay");
+        if (player == NULL) {
+            player = g_find_program_in_path("pw-play");
+        }
+        if (player != NULL) {
+            gchar *arguments[] = {player, sound_file, NULL};
+            spawn_nonblocking(arguments);
+            g_free(player);
+            g_free(sound_file);
+            return;
+        }
+        g_free(sound_file);
+    }
+
+    /* Retain theme lookup as a fallback on desktops without a direct player. */
     gchar *sound_argument = g_strdup_printf("--id=%s", sound_id);
     gchar *description_argument = g_strdup_printf(
         "--description=%s", description);

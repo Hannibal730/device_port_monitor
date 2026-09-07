@@ -83,7 +83,9 @@ device change occurs. It does not poll device status periodically, which keeps
 idle CPU usage very low.
 
 The notification sound player also runs only when a device change is detected
-and exits immediately after playing the sound.
+and exits immediately after playing the sound. The monitor plays the installed
+Yaru or freedesktop sound file directly, so notification audio does not depend
+on the desktop event-sounds setting. Theme event playback remains as a fallback.
 
 The following results were measured on Ubuntu 22.04 x86_64 with GNOME, using
 the AppImage while the settings window was closed:
@@ -195,7 +197,9 @@ AppImage는 별도 설치 없이 설정창을 연다. 자동 실행을 켠 뒤�
 장치 상태를 주기적으로 조회하지 않으므로 대기 중 CPU 사용량이 매우 낮다.
 
 알림음 재생 프로세스도 장치 변화가 감지된 순간에만 실행되고 소리 재생 후 바로
-종료된다.
+종료된다. 설치된 Yaru 또는 freedesktop 사운드 파일을 직접 재생하므로 데스크톱의
+이벤트 알림음 설정에 의존하지 않으며, 직접 재생할 수 없을 때는 테마 이벤트
+재생을 대체 경로로 사용한다.
 
 Ubuntu 22.04 x86_64 GNOME 환경에서 AppImage를 실행하고 설정창을 닫은 상태로
 측정한 결과는 다음과 같다.
