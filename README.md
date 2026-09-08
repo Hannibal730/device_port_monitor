@@ -38,7 +38,7 @@ The DEB file is located in the `dist/` directory. Run the following command
 from the repository root:
 
 ```bash
-sudo apt install ./dist/device-port-monitor_1.2.0_amd64.deb
+sudo apt install ./dist/device-port-monitor_1.3.0_amd64.deb
 ```
 
 After installation, launch **Device Port Monitor** from the application menu.
@@ -49,8 +49,8 @@ First move the AppImage to the folder where you intend to keep it. Run the
 following commands from that folder:
 
 ```bash
-chmod +x Device_Port_Monitor-1.2.0-x86_64.AppImage
-./Device_Port_Monitor-1.2.0-x86_64.AppImage
+chmod +x Device_Port_Monitor-1.3.0-x86_64.AppImage
+./Device_Port_Monitor-1.3.0-x86_64.AppImage
 ```
 
 The AppImage opens the settings window without installation. Do not move or
@@ -155,7 +155,7 @@ ARM64 컴퓨터는 `arm64` DEB 또는 `aarch64` AppImage를 사용한다.
 DEB 파일은 `dist/` 폴더 안에 있다. 저장소의 최상위 폴더에서 다음 명령을 실행한다.
 
 ```bash
-sudo apt install ./dist/device-port-monitor_1.2.0_amd64.deb
+sudo apt install ./dist/device-port-monitor_1.3.0_amd64.deb
 ```
 
 설치가 끝나면 앱 메뉴에서 **Device Port Monitor**를 실행한다.
@@ -165,8 +165,8 @@ sudo apt install ./dist/device-port-monitor_1.2.0_amd64.deb
 AppImage를 먼저 계속 보관할 폴더로 옮긴다. 그 폴더에서 다음 명령을 실행한다.
 
 ```bash
-chmod +x Device_Port_Monitor-1.2.0-x86_64.AppImage
-./Device_Port_Monitor-1.2.0-x86_64.AppImage
+chmod +x Device_Port_Monitor-1.3.0-x86_64.AppImage
+./Device_Port_Monitor-1.3.0-x86_64.AppImage
 ```
 
 AppImage는 별도 설치 없이 설정창을 연다. 자동 실행을 켠 뒤에는 AppImage 파일을

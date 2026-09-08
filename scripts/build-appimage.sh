@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-VERSION=1.2.0
+VERSION=1.3.0
 MACHINE_ARCH=$(uname -m)
 
 case "$MACHINE_ARCH" in
