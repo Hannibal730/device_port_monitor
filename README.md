@@ -14,6 +14,7 @@ top bar.
 - Displays `ACM n · USB n · VID n` in the top bar
 - Shows current device paths when the top-bar icon is clicked
 - Shows desktop notifications when devices are connected or disconnected
+- Immediately updates a visible notification when another device change occurs
 - Plays different notification sounds for device connection and disconnection
 - Shows device descriptions and distinguishes video capture from camera metadata
 - Provides a login autostart preference
@@ -132,6 +133,7 @@ Ubuntu GNOME 상단바에서 `/dev/ttyACM*`, `/dev/ttyUSB*`, `/dev/video*` 장�
 - 상단바에 `ACM n · USB n · VID n` 표시
 - 상단바 아이콘을 클릭하면 현재 장치 경로 표시
 - 장치 연결·분리 시 데스크톱 알림 표시
+- 알림 표시 중 다른 장치 변경이 발생하면 현재 알림을 즉시 갱신
 - 장치 연결과 분리에 서로 다른 알림음 재생
 - 장치 설명을 표시하고 영상 캡처와 카메라 메타데이터 노드를 구분
 - 로그인 시 자동 실행 설정

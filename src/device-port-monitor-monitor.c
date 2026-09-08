@@ -46,6 +46,7 @@ extern void app_indicator_set_title(AppIndicator *self, const gchar *title);
 #define APP_INDICATOR_CATEGORY_HARDWARE 3
 #define APP_INDICATOR_STATUS_ACTIVE 1
 #define DEBOUNCE_MS 300
+#define NOTIFICATION_TIMEOUT_MS 5000
 
 typedef struct {
     GPtrArray *all;
@@ -57,7 +58,11 @@ typedef struct {
 typedef struct {
     DeviceLists *devices;
     GFileMonitor *file_monitor;
+    GDBusConnection *notification_bus;
     guint refresh_source;
+    guint notification_closed_subscription;
+    guint notification_reset_source;
+    guint32 notification_id;
     AppIndicator *indicator;
     GtkWidget *menu;
     gchar *icon_path;
@@ -276,10 +281,151 @@ static void play_device_sound(gboolean has_added, gboolean has_removed) {
     g_free(sound_argument);
 }
 
+static gboolean forget_active_notification(gpointer user_data) {
+    MonitorApp *app = user_data;
+    app->notification_id = 0;
+    app->notification_reset_source = 0;
+    return G_SOURCE_REMOVE;
+}
+
+static void clear_active_notification(MonitorApp *app) {
+    app->notification_id = 0;
+    if (app->notification_reset_source != 0) {
+        g_source_remove(app->notification_reset_source);
+        app->notification_reset_source = 0;
+    }
+}
+
+static void notification_closed(
+    GDBusConnection *connection,
+    const gchar *sender_name,
+    const gchar *object_path,
+    const gchar *interface_name,
+    const gchar *signal_name,
+    GVariant *parameters,
+    gpointer user_data) {
+    (void)connection;
+    (void)sender_name;
+    (void)object_path;
+    (void)interface_name;
+    (void)signal_name;
+    MonitorApp *app = user_data;
+    guint32 notification_id = 0;
+    guint32 reason = 0;
+    g_variant_get(parameters, "(uu)", &notification_id, &reason);
+    (void)reason;
+
+    if (notification_id == app->notification_id) {
+        clear_active_notification(app);
+    }
+}
+
+static gboolean ensure_notification_bus(MonitorApp *app) {
+    if (app->notification_bus != NULL) {
+        return TRUE;
+    }
+
+    GError *error = NULL;
+    app->notification_bus = g_bus_get_sync(
+        G_BUS_TYPE_SESSION, NULL, &error);
+    if (app->notification_bus == NULL) {
+        g_printerr(
+            "Unable to connect to the notification bus: %s\n",
+            error->message);
+        g_error_free(error);
+        return FALSE;
+    }
+
+    app->notification_closed_subscription =
+        g_dbus_connection_signal_subscribe(
+            app->notification_bus,
+            "org.freedesktop.Notifications",
+            "org.freedesktop.Notifications",
+            "NotificationClosed",
+            "/org/freedesktop/Notifications",
+            NULL,
+            G_DBUS_SIGNAL_FLAGS_NONE,
+            notification_closed,
+            app,
+            NULL);
+    return TRUE;
+}
+
+static gboolean send_replacing_notification(
+    MonitorApp *app, const gchar *title, const gchar *body) {
+    if (!ensure_notification_bus(app)) {
+        return FALSE;
+    }
+
+    GVariantBuilder actions;
+    GVariantBuilder hints;
+    g_variant_builder_init(&actions, G_VARIANT_TYPE("as"));
+    g_variant_builder_init(&hints, G_VARIANT_TYPE("a{sv}"));
+
+    const gchar *icon = app->icon_path != NULL
+                            ? app->icon_path
+                            : "drive-removable-media-symbolic";
+    GError *error = NULL;
+    GVariant *reply = g_dbus_connection_call_sync(
+        app->notification_bus,
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+        "Notify",
+        g_variant_new(
+            "(susssasa{sv}i)",
+            "Device Port Monitor",
+            app->notification_id,
+            icon,
+            title,
+            body,
+            &actions,
+            &hints,
+            NOTIFICATION_TIMEOUT_MS),
+        G_VARIANT_TYPE("(u)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        2000,
+        NULL,
+        &error);
+    if (reply == NULL) {
+        g_printerr("Unable to send D-Bus notification: %s\n", error->message);
+        g_error_free(error);
+        clear_active_notification(app);
+        return FALSE;
+    }
+
+    g_variant_get(reply, "(u)", &app->notification_id);
+    g_variant_unref(reply);
+    if (app->notification_reset_source != 0) {
+        g_source_remove(app->notification_reset_source);
+    }
+    app->notification_reset_source = g_timeout_add(
+        NOTIFICATION_TIMEOUT_MS, forget_active_notification, app);
+    return TRUE;
+}
+
+static void send_notification_fallback(
+    const gchar *title, const gchar *body, const gchar *icon_path) {
+    gchar *icon_argument = g_strdup_printf(
+        "--icon=%s",
+        icon_path != NULL ? icon_path : "drive-removable-media-symbolic");
+    gchar *arguments[] = {
+        "notify-send",
+        "--app-name=Device Port Monitor",
+        "--expire-time=5000",
+        icon_argument,
+        (gchar *)title,
+        (gchar *)body,
+        NULL,
+    };
+    spawn_nonblocking(arguments);
+    g_free(icon_argument);
+}
+
 static void send_notification(
+    MonitorApp *app,
     const DeviceLists *previous,
-    const DeviceLists *current,
-    const gchar *icon_path) {
+    const DeviceLists *current) {
     GString *body = g_string_new(NULL);
     gboolean has_added = FALSE;
     gboolean has_removed = FALSE;
@@ -315,21 +461,10 @@ static void send_notification(
         title = "Device disconnected";
     }
 
-    gchar *icon_argument = g_strdup_printf(
-        "--icon=%s",
-        icon_path != NULL ? icon_path : "drive-removable-media-symbolic");
-    gchar *arguments[] = {
-        "notify-send",
-        "--app-name=Device Port Monitor",
-        "--expire-time=5000",
-        icon_argument,
-        (gchar *)title,
-        body->str,
-        NULL,
-    };
-    spawn_nonblocking(arguments);
+    if (!send_replacing_notification(app, title, body->str)) {
+        send_notification_fallback(title, body->str, app->icon_path);
+    }
     play_device_sound(has_added, has_removed);
-    g_free(icon_argument);
     g_string_free(body, TRUE);
 }
 
@@ -443,7 +578,7 @@ static gboolean refresh_devices(gpointer user_data) {
     DeviceLists *previous = app->devices;
     app->devices = current;
     render_menu(app);
-    send_notification(previous, current, app->icon_path);
+    send_notification(app, previous, current);
     device_lists_free(previous);
     malloc_trim(0);
     return G_SOURCE_REMOVE;
@@ -563,6 +698,13 @@ int main(int argc, char **argv) {
     if (app.refresh_source != 0) {
         g_source_remove(app.refresh_source);
     }
+    if (app.notification_closed_subscription != 0) {
+        g_dbus_connection_signal_unsubscribe(
+            app.notification_bus,
+            app.notification_closed_subscription);
+    }
+    clear_active_notification(&app);
+    g_clear_object(&app.notification_bus);
     g_file_monitor_cancel(app.file_monitor);
     g_object_unref(app.file_monitor);
     gtk_widget_destroy(app.menu);
