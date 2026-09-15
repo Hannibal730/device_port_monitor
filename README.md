@@ -1,4 +1,5 @@
 ![Visitor Badge](https://visitor-badge.laobi.icu/badge?page_id=Hannibal730.device_port_monitor)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 <img src="https://github.com/user-attachments/assets/8f565b5f-4d55-4d6f-b392-b568d1371096" width="300" alt="toolbar_widget" />
 
