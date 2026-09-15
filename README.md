@@ -1,10 +1,26 @@
 ![Visitor Badge](https://visitor-badge.laobi.icu/badge?page_id=Hannibal730.device_port_monitor)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-<img src="https://github.com/user-attachments/assets/8f565b5f-4d55-4d6f-b392-b568d1371096" width="300" alt="toolbar_widget" />
+<!-- <img src="https://github.com/user-attachments/assets/8f565b5f-4d55-4d6f-b392-b568d1371096" width="300" alt="toolbar_widget" />
 
-<img src="https://github.com/user-attachments/assets/c85d1beb-ee4b-4b3d-9dc3-69a9b8c6e5a0" width="400" alt="ui" />
+<img src="https://github.com/user-attachments/assets/c85d1beb-ee4b-4b3d-9dc3-69a9b8c6e5a0" width="400" alt="ui" /> -->
 
+<table width="100%">
+  <tr>
+    <td align="center" width="50%"><b>Toolbar</b></td>
+    <td align="center" width="50%"><b>Detailed View</b></td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/8f565b5f-4d55-4d6f-b392-b568d1371096" width="100%" alt="toolbar_widget">
+    </td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/c85d1beb-ee4b-4b3d-9dc3-69a9b8c6e5a0" width="100%" alt="ui">
+    </td>
+  </tr>
+</table>
+
+---
 
 # Device Port Monitor
 
